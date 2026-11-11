@@ -3,7 +3,7 @@
 This project builds on the original basic_stats.py calculations. It uses only
 Drafter, Matplotlib, and Python's standard library.
 """
-
+set_site_information(Lucas Achilles, PIV analysis website, used Chatgpt, Draft)
 from dataclasses import dataclass
 import csv
 from io import StringIO
