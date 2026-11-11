@@ -3,8 +3,7 @@
 This project builds on the original basic_stats.py calculations. It uses only
 Drafter, Matplotlib, and Python's standard library.
 """
-set_website_title("PIV analysis")
-set_site_information("Lucas Achilles", "A website for analyzing and visualizing Particle Image Velocimetry (PIV) data.", "ChatGPT and Drafter","","",None)
+
 from dataclasses import dataclass
 import csv
 from io import StringIO
@@ -14,7 +13,8 @@ from matplotlib.axes import Axes
 from matplotlib.tri import Triangulation
 from drafter import *
 
-
+set_website_title("PIV analysis")
+set_site_information("Lucas Achilles", "A website for analyzing and visualizing Particle Image Velocimetry (PIV) data.", "ChatGPT and Drafter","","",None)
 # These are constants; datasets and user preferences live in State, not here.
 PLOT_MODES = ("Velocity vectors", "Speed map", "Colored vectors",
               "Speed histogram", "Velocity heatmap")
