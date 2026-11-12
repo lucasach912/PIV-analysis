@@ -1170,6 +1170,207 @@ def export_page(state: State) -> Page:
                                       content_type="text/csv")))
     return Page(state, contents)
 
+def run_tests() -> None:
+    """Test calculations and all 19 Drafter routes using independent states."""
+    from bakery import assert_equal
+    from drafter import assert_has
+
+    print("Running PIV Flow Analyzer tests...")
+
+    # ---------------- Calculations and demo CSV data ----------------
+    straight = read_csv(DEMO_STRAIGHT)
+    vortex = read_csv(DEMO_VORTEX)
+
+    assert_equal(len(straight.x), 9)
+    assert_equal(len(vortex.x), 9)
+    assert_equal(straight.u[0], 1.0)
+    assert_equal(straight.v[0], 0.15)
+    assert_equal(vortex.u[4], 0.0)
+    assert_equal(vortex.v[4], 0.0)
+    assert_equal(vortex.speeds[4], 0.0)
+    assert_equal(vortex.speeds[0], math.sqrt(2))
+    assert_equal(mean_value(vortex.u), 0.0)
+    assert_equal(mean_value(vortex.v), 0.0)
+    assert_equal(calculate_speeds([3.0, 0.0], [4.0, 0.0]), [5.0, 0.0])
+    assert_equal(mean_value([2.0, 4.0, 6.0]), 4.0)
+    assert_equal(max_speed([1.0, 5.0, 3.0]), 5.0)
+    assert_equal(percentage_change(0.0, 10.0), None)
+    assert_equal(len(filtered_vectors(vortex, 1.0).speeds), 8)
+    assert_equal(len(sample_vectors(straight, 2).speeds), 5)
+
+    # 1. index: empty dashboard and dashboard with a dataset.
+    assert_equal(assert_has(index(fresh_state()), "No experiment selected"), True)
+    demo_state = fresh_state()
+
+    # 2. load_demo: both demos load, but duplicates do not.
+    demo_page = load_demo(demo_state)
+    assert_equal(assert_has(demo_page, "Straight flow (demo)"), True)
+    assert_equal(len(demo_state.datasets), 2)
+    assert_equal(demo_state.active_index, 0)
+    assert_equal(demo_state.compare_index, 1)
+
+    load_demo(demo_state)
+    assert_equal(len(demo_state.datasets), 2)
+    assert_equal(assert_has(index(demo_state), "Mean speed"), True)
+    plt.close("all")
+
+    # 3. upload_page: the form includes an upload action.
+    assert_equal(assert_has(upload_page(fresh_state()), "Analyze CSV"), True)
+
+    # 4. leave_upload: cancelling does not add a dataset.
+    cancel_state = fresh_state()
+    cancelled = leave_upload(cancel_state, "Unused", "", None)
+    assert_equal(assert_has(cancelled, "Analysis dashboard"), True)
+    assert_equal(len(cancel_state.datasets), 0)
+
+    # 5. process_upload: good and bad uploads.
+    upload_state = fresh_state()
+    uploaded = process_upload(upload_state, "Lab test", "Sample notes", DEMO_STRAIGHT)
+
+    assert_equal(assert_has(uploaded, "Number of vectors"), True)
+    assert_equal(len(upload_state.datasets), 1)
+    assert_equal(upload_state.datasets[0].name, "Lab test")
+    assert_equal(upload_state.datasets[0].description, "Sample notes")
+
+    bad_upload_state = fresh_state()
+    bad_upload = process_upload(bad_upload_state, "Bad CSV", "", "not a CSV")
+    assert_equal(assert_has(bad_upload, "CSV upload failed"), True)
+    assert_equal(len(bad_upload_state.datasets), 0)
+
+    # 6. datasets_page: lists datasets and explains the empty case.
+    assert_equal(assert_has(datasets_page(demo_state), "Rotating flow (demo)"), True)
+    assert_equal(assert_has(datasets_page(fresh_state()), "No experiments"), True)
+
+    # 7. select_dataset: valid and invalid indices.
+    selected = select_dataset(demo_state, 1)
+    assert_equal(assert_has(selected, "Selected Rotating flow"), True)
+    assert_equal(demo_state.active_index, 1)
+
+    select_dataset(demo_state, 99)
+    assert_equal(demo_state.active_index, 1)
+
+    # 8. delete_dataset: removes a dataset and corrects indices.
+    deleted = delete_dataset(demo_state, 0)
+    assert_equal(assert_has(deleted, "Deleted Straight flow"), True)
+    assert_equal(len(demo_state.datasets), 1)
+    assert_equal(demo_state.active_index, 0)
+
+    delete_dataset(demo_state, 99)
+    assert_equal(len(demo_state.datasets), 1)
+
+    # 9. results_page: statistics and empty-state guidance.
+    assert_equal(assert_has(results_page(demo_state), "Mean speed"), True)
+    assert_equal(assert_has(results_page(fresh_state()), "Upload or select"), True)
+
+    # Make a fresh state for graph and comparison tests.
+    graph_state = fresh_state()
+    load_demo(graph_state)
+
+    # 10. visualization_page: render all five graph choices.
+    for plot_name in PLOT_MODES:
+        graph_state.plot_mode = plot_name
+        graph_page = visualization_page(graph_state)
+        assert_equal(assert_has(graph_page, "Download this graph"), True)
+        plt.close("all")
+
+    # 11. set_visualization: save valid settings, reject invalid spacing.
+    changed = set_visualization(graph_state, "Speed histogram", "2")
+    assert_equal(assert_has(changed, "Plot updated"), True)
+    assert_equal(graph_state.plot_mode, "Speed histogram")
+    assert_equal(graph_state.arrow_density, 2)
+
+    set_visualization(graph_state, "Velocity vectors", "0")
+    assert_equal(graph_state.plot_mode, "Speed histogram")
+    assert_equal(graph_state.arrow_density, 2)
+
+    # 12. leave_visualization: cancel without changing saved choices.
+    left_graph = leave_visualization(graph_state, "Colored vectors", "8")
+    assert_equal(assert_has(left_graph, "Experiment results"), True)
+    assert_equal(graph_state.plot_mode, "Speed histogram")
+    assert_equal(graph_state.arrow_density, 2)
+    plt.close("all")
+
+    # 13. comparison_page: show side-by-side comparison.
+    compare_state = fresh_state()
+    load_demo(compare_state)
+
+    comparison = comparison_page(compare_state)
+    assert_equal(assert_has(comparison, "Mean speed change"), True)
+    assert_equal(assert_has(comparison_page(fresh_state()), "At least two"), True)
+    plt.close("all")
+
+    # 14. compare_datasets: change selections, reject matching choices.
+    first_choice = choice_for_index(compare_state, 0)
+    second_choice = choice_for_index(compare_state, 1)
+
+    compare_datasets(compare_state, second_choice, first_choice)
+    assert_equal(compare_state.active_index, 1)
+    assert_equal(compare_state.compare_index, 0)
+
+    compare_datasets(compare_state, first_choice, first_choice)
+    assert_equal(
+        (compare_state.active_index, compare_state.compare_index),
+        (1, 0)
+    )
+    plt.close("all")
+
+    # 15. leave_comparison: return without changing selections.
+    left_compare = leave_comparison(compare_state, first_choice, second_choice)
+    assert_equal(assert_has(left_compare, "Analysis dashboard"), True)
+    assert_equal(compare_state.compare_index, 0)
+    plt.close("all")
+
+    # 16. settings_page: show the settings form.
+    settings_state = fresh_state()
+    assert_equal(assert_has(settings_page(settings_state), "Save all settings"), True)
+
+    # 17. save_settings: save valid values, ignore invalid values.
+    saved = save_settings(
+        settings_state, "0.2", "3", "5", True, False,
+        "cm", "cm/s", "0.3"
+    )
+    assert_equal(assert_has(saved, "settings saved"), True)
+    assert_equal(settings_state.minimum_speed, 0.2)
+    assert_equal(settings_state.arrow_density, 3)
+    assert_equal(settings_state.color_max_speed, 5.0)
+    assert_equal(settings_state.normalize_arrows, True)
+    assert_equal(settings_state.show_grid, False)
+    assert_equal(settings_state.position_units, "cm")
+    assert_equal(settings_state.velocity_units, "cm/s")
+    assert_equal(settings_state.stationary_cutoff, 0.3)
+
+    save_settings(
+        settings_state, "-1", "3", "5", True, False,
+        "cm", "cm/s", "0.3"
+    )
+    assert_equal(settings_state.minimum_speed, 0.2)
+
+    # 18. leave_settings: discard unsubmitted changes.
+    left_settings = leave_settings(
+        settings_state, "9", "9", "9", False,
+        True, "m", "m/s", "9"
+    )
+    assert_equal(assert_has(left_settings, "Analysis dashboard"), True)
+    assert_equal(settings_state.minimum_speed, 0.2)
+    assert_equal(settings_state.arrow_density, 3)
+
+    # 19. export_page: show CSV download options and empty guidance.
+    export_state = fresh_state()
+    load_demo(export_state)
+
+    assert_equal(assert_has(export_page(export_state), "Download summary CSV"), True)
+    assert_equal(assert_has(export_page(fresh_state()), "Upload or select"), True)
+
+    # Check that exported CSV data matches the original measurements.
+    rows = list(csv.reader(StringIO(processed_csv(straight))))
+    assert_equal(rows[0], ["x", "y", "u", "v", "speed"])
+    assert_equal(len(rows), 10)
+    assert_equal(float(rows[1][2]), 1.0)
+
+    plt.close("all")
+    print("Finished PIV Flow Analyzer tests. Review any FAILED messages above.")
+
+
 
 if __name__ == "__main__":
     # Unlike the old basic_stats.py, no test plots or local files run on import.
